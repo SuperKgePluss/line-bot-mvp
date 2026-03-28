@@ -63,7 +63,7 @@ function getTodaySummary(userId) {
         SELECT type, SUM(amount) as total
         FROM transactions
         WHERE userId = ?
-          AND DATE(datetime(createdAt, 'localtime')) = DATE('now', 'localtime')
+          AND DATE(datetime(createdAt, '+7 hours')) = DATE('now', '+7 hours')
         GROUP BY type
     `);
 
@@ -94,7 +94,7 @@ function getTodayCategorySummary(userId) {
             SUM(amount) as total
         FROM transactions
         WHERE userId = ?
-          AND DATE(datetime(createdAt, 'localtime')) = DATE('now', 'localtime')
+          AND DATE(datetime(createdAt, '+7 hours')) = DATE('now', '+7 hours')
         GROUP BY category, type
         ORDER BY total DESC
     `);
@@ -106,12 +106,12 @@ function getTodayCategorySummary(userId) {
 function getDailySummary(userId, limitDays = 7) {
     const stmt = db.prepare(`
         SELECT
-            DATE(datetime(createdAt, 'localtime')) as date,
+            DATE(datetime(createdAt, '+7 hours')) as date,
             SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) as income,
             SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as expense
         FROM transactions
         WHERE userId = ?
-        GROUP BY DATE(datetime(createdAt, 'localtime'))
+        GROUP BY DATE(datetime(createdAt, '+7 hours'))
         ORDER BY date DESC
         LIMIT ?
     `);
