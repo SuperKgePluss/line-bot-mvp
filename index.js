@@ -112,6 +112,16 @@ function formatAmount(amount) {
     return Number(amount || 0).toLocaleString('en-US');
 }
 
+function requireUserId(res, userId) {
+    if (!userId) {
+        res.status(400).json({
+            error: 'Missing userId'
+        });
+        return false;
+    }
+    return true;
+}
+
 // =====================
 // PARSE MESSAGE
 // =====================
@@ -381,7 +391,77 @@ async function handleEvent(event) {
 // SERVER
 // =====================
 app.get('/', (req, res) => {
-    res.send('LINE Bot Ready');
+    res.send('LINE Bot Ready | Debug endpoints: /debug/recent, /debug/category-summary, /debug/daily-summary');
+});
+
+app.get('/debug/recent', (req, res) => {
+    try {
+        const { userId } = req.query;
+        const limit = Number(req.query.limit || 20);
+
+        if (!requireUserId(res, userId)) return;
+
+        const safeLimit = Math.min(Math.max(limit, 1), 100);
+        const rows = getRecentTransactions(userId, safeLimit);
+
+        res.json({
+            ok: true,
+            count: rows.length,
+            items: rows
+        });
+    } catch (error) {
+        console.error('❌ /debug/recent error:', error);
+        res.status(500).json({
+            ok: false,
+            error: 'Internal server error'
+        });
+    }
+});
+
+app.get('/debug/category-summary', (req, res) => {
+    try {
+        const { userId } = req.query;
+
+        if (!requireUserId(res, userId)) return;
+
+        const rows = getTodayCategorySummary(userId);
+
+        res.json({
+            ok: true,
+            count: rows.length,
+            items: rows
+        });
+    } catch (error) {
+        console.error('❌ /debug/category-summary error:', error);
+        res.status(500).json({
+            ok: false,
+            error: 'Internal server error'
+        });
+    }
+});
+
+app.get('/debug/daily-summary', (req, res) => {
+    try {
+        const { userId } = req.query;
+        const days = Number(req.query.days || 7);
+
+        if (!requireUserId(res, userId)) return;
+
+        const safeDays = Math.min(Math.max(days, 1), 90);
+        const rows = getDailySummary(userId, safeDays);
+
+        res.json({
+            ok: true,
+            count: rows.length,
+            items: rows
+        });
+    } catch (error) {
+        console.error('❌ /debug/daily-summary error:', error);
+        res.status(500).json({
+            ok: false,
+            error: 'Internal server error'
+        });
+    }
 });
 
 app.listen(PORT, () => {
