@@ -2,7 +2,13 @@
 
 const express = require('express');
 const line = require('@line/bot-sdk');
-const db = require('./db/database');
+const {
+    db,
+    getTodaySummary,
+    getRecentTransactions,
+    getTodayCategorySummary,
+    getDailySummary
+} = require('./db/database');
 
 const app = express();
 
@@ -194,7 +200,7 @@ function parseMessage(text) {
 // SAVE TRANSACTION
 // =====================
 function saveTransaction(userId, tx, sourceMessageId, sourceTxnIndex) {
-    const { type, amount, category } = tx;
+    const { type, amount, category, note } = tx;
 
     if (!userId || !type || !amount || amount <= 0) {
         return Promise.reject(new Error('Invalid transaction data'));
@@ -207,11 +213,27 @@ function saveTransaction(userId, tx, sourceMessageId, sourceTxnIndex) {
     return new Promise((resolve, reject) => {
         try {
             const stmt = db.prepare(`
-                INSERT INTO transactions (userId, type, amount, category, sourceMessageId, sourceTxnIndex)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO transactions (
+                    userId,
+                    type,
+                    amount,
+                    category,
+                    note,
+                    sourceMessageId,
+                    sourceTxnIndex
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             `);
 
-            const result = stmt.run(userId, type, amount, category, sourceMessageId, sourceTxnIndex);
+            const result = stmt.run(
+                userId,
+                type,
+                amount,
+                category,
+                note || 'ไม่ระบุ',
+                sourceMessageId,
+                sourceTxnIndex
+            );
 
             resolve({
                 id: result.lastInsertRowid,
@@ -226,46 +248,8 @@ function saveTransaction(userId, tx, sourceMessageId, sourceTxnIndex) {
 // =====================
 // SUMMARY
 // =====================
-function getTodaySummary(userId, callback) {
-    try {
-        const stmt = db.prepare(`
-            SELECT type, SUM(amount) as total
-            FROM transactions
-            WHERE userId = ?
-            AND DATE(datetime(createdAt, 'localtime')) = DATE('now', 'localtime')
-            GROUP BY type
-        `);
-
-        const rows = stmt.all(userId);
-
-        let income = 0;
-        let expense = 0;
-
-        rows.forEach(row => {
-            if (row.type === 'income') income = row.total;
-            if (row.type === 'expense') expense = row.total;
-        });
-
-        callback({
-            income,
-            expense,
-            balance: income - expense
-        });
-    } catch (err) {
-        callback({
-            income: 0,
-            expense: 0,
-            balance: 0
-        });
-    }
-}
-
 function getTodaySummaryAsync(userId) {
-    return new Promise((resolve) => {
-        getTodaySummary(userId, (summary) => {
-            resolve(summary);
-        });
-    });
+    return Promise.resolve(getTodaySummary(userId));
 }
 
 // =====================

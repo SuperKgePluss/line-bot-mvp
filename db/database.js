@@ -13,15 +13,123 @@ db.exec(`
         type TEXT NOT NULL,
         amount REAL NOT NULL,
         category TEXT,
+        note TEXT,
         sourceMessageId TEXT,
         sourceTxnIndex INTEGER,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
     )
 `);
 
+// =====================
+// SAFE MIGRATION
+// =====================
+function ensureColumnExists(tableName, columnName, columnDefinition) {
+    const columns = db.prepare(`PRAGMA table_info(${tableName})`).all();
+    const hasColumn = columns.some(col => col.name === columnName);
+
+    if (!hasColumn) {
+        db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`);
+        console.log(`✅ Added column ${columnName} to ${tableName}`);
+    }
+}
+
+ensureColumnExists('transactions', 'note', 'TEXT');
+
 db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_message_dedup
     ON transactions (sourceMessageId, sourceTxnIndex)
 `);
 
-module.exports = db;
+// =====================
+// ANALYTICS HELPERS
+// =====================
+
+// รายการล่าสุด
+function getRecentTransactions(userId, limit = 20) {
+    const stmt = db.prepare(`
+        SELECT id, userId, type, amount, category, note, sourceMessageId, sourceTxnIndex, createdAt
+        FROM transactions
+        WHERE userId = ?
+        ORDER BY datetime(createdAt) DESC, id DESC
+        LIMIT ?
+    `);
+
+    return stmt.all(userId, limit);
+}
+
+// summary วันนี้
+function getTodaySummary(userId) {
+    const stmt = db.prepare(`
+        SELECT type, SUM(amount) as total
+        FROM transactions
+        WHERE userId = ?
+          AND DATE(datetime(createdAt, 'localtime')) = DATE('now', 'localtime')
+        GROUP BY type
+    `);
+
+    const rows = stmt.all(userId);
+
+    let income = 0;
+    let expense = 0;
+
+    rows.forEach(row => {
+        if (row.type === 'income') income = row.total || 0;
+        if (row.type === 'expense') expense = row.total || 0;
+    });
+
+    return {
+        income,
+        expense,
+        balance: income - expense
+    };
+}
+
+// สรุปตามหมวดหมู่ของวันนี้
+function getTodayCategorySummary(userId) {
+    const stmt = db.prepare(`
+        SELECT
+            category,
+            type,
+            COUNT(*) as count,
+            SUM(amount) as total
+        FROM transactions
+        WHERE userId = ?
+          AND DATE(datetime(createdAt, 'localtime')) = DATE('now', 'localtime')
+        GROUP BY category, type
+        ORDER BY total DESC
+    `);
+
+    return stmt.all(userId);
+}
+
+// สรุปรายวันย้อนหลัง
+function getDailySummary(userId, limitDays = 7) {
+    const stmt = db.prepare(`
+        SELECT
+            DATE(datetime(createdAt, 'localtime')) as date,
+            SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) as income,
+            SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as expense
+        FROM transactions
+        WHERE userId = ?
+        GROUP BY DATE(datetime(createdAt, 'localtime'))
+        ORDER BY date DESC
+        LIMIT ?
+    `);
+
+    const rows = stmt.all(userId, limitDays);
+
+    return rows.map(row => ({
+        date: row.date,
+        income: row.income || 0,
+        expense: row.expense || 0,
+        balance: (row.income || 0) - (row.expense || 0)
+    }));
+}
+
+module.exports = {
+    db,
+    getRecentTransactions,
+    getTodaySummary,
+    getTodayCategorySummary,
+    getDailySummary
+};
