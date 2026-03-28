@@ -1,0 +1,19 @@
+{
+  "name": "line-bot-mvp",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@line/bot-sdk": "^10.6.0",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1"
+  }
+}
