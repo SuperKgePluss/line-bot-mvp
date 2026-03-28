@@ -205,21 +205,21 @@ function saveTransaction(userId, tx, sourceMessageId, sourceTxnIndex) {
     }
 
     return new Promise((resolve, reject) => {
-        db.run(
-            `INSERT INTO transactions (userId, type, amount, category, sourceMessageId, sourceTxnIndex)
-             VALUES (?, ?, ?, ?, ?, ?)`,
-            [userId, type, amount, category, sourceMessageId, sourceTxnIndex],
-            function (err) {
-                if (err) {
-                    return reject(err);
-                }
+        try {
+            const stmt = db.prepare(`
+                INSERT INTO transactions (userId, type, amount, category, sourceMessageId, sourceTxnIndex)
+                VALUES (?, ?, ?, ?, ?, ?)
+            `);
 
-                resolve({
-                    id: this.lastID,
-                    changes: this.changes
-                });
-            }
-        );
+            const result = stmt.run(userId, type, amount, category, sourceMessageId, sourceTxnIndex);
+
+            resolve({
+                id: result.lastInsertRowid,
+                changes: result.changes
+            });
+        } catch (err) {
+            reject(err);
+        }
     });
 }
 
@@ -227,39 +227,37 @@ function saveTransaction(userId, tx, sourceMessageId, sourceTxnIndex) {
 // SUMMARY
 // =====================
 function getTodaySummary(userId, callback) {
-    db.all(
-        `
-        SELECT type, SUM(amount) as total
-        FROM transactions
-        WHERE userId = ?
-        AND DATE(datetime(createdAt, 'localtime')) = DATE('now', 'localtime')
-        GROUP BY type
-        `,
-        [userId],
-        (err, rows) => {
-            if (err) {
-                return callback({
-                    income: 0,
-                    expense: 0,
-                    balance: 0
-                });
-            }
+    try {
+        const stmt = db.prepare(`
+            SELECT type, SUM(amount) as total
+            FROM transactions
+            WHERE userId = ?
+            AND DATE(datetime(createdAt, 'localtime')) = DATE('now', 'localtime')
+            GROUP BY type
+        `);
 
-            let income = 0;
-            let expense = 0;
+        const rows = stmt.all(userId);
 
-            rows.forEach(row => {
-                if (row.type === 'income') income = row.total;
-                if (row.type === 'expense') expense = row.total;
-            });
+        let income = 0;
+        let expense = 0;
 
-            callback({
-                income,
-                expense,
-                balance: income - expense
-            });
-        }
-    );
+        rows.forEach(row => {
+            if (row.type === 'income') income = row.total;
+            if (row.type === 'expense') expense = row.total;
+        });
+
+        callback({
+            income,
+            expense,
+            balance: income - expense
+        });
+    } catch (err) {
+        callback({
+            income: 0,
+            expense: 0,
+            balance: 0
+        });
+    }
 }
 
 function getTodaySummaryAsync(userId) {

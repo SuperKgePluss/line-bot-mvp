@@ -1,33 +1,27 @@
-﻿const sqlite3 = require('sqlite3').verbose();
+﻿const Database = require('better-sqlite3');
+const path = require('path');
 
-// เชื่อม DB (ถ้ายังไม่มีไฟล์จะสร้างให้เลย)
-const db = new sqlite3.Database('./db/finance.db', (err) => {
-    if (err) {
-        console.error('❌ DB Error:', err.message);
-    } else {
-        console.log('✅ Connected to SQLite database');
-    }
-});
+const dbPath = path.join(__dirname, 'finance.db');
+const db = new Database(dbPath);
 
-// สร้าง table
-db.serialize(() => {
-    db.run(`
-        CREATE TABLE IF NOT EXISTS transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            userId TEXT NOT NULL,
-            type TEXT NOT NULL,
-            amount REAL NOT NULL,
-            category TEXT,
-            sourceMessageId TEXT,
-            sourceTxnIndex INTEGER,
-            createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
+console.log('✅ Connected to SQLite database');
 
-    db.run(`
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_message_dedup
-        ON transactions (sourceMessageId, sourceTxnIndex)
-    `);
-});
+db.exec(`
+    CREATE TABLE IF NOT EXISTS transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId TEXT NOT NULL,
+        type TEXT NOT NULL,
+        amount REAL NOT NULL,
+        category TEXT,
+        sourceMessageId TEXT,
+        sourceTxnIndex INTEGER,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+`);
+
+db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_message_dedup
+    ON transactions (sourceMessageId, sourceTxnIndex)
+`);
 
 module.exports = db;
