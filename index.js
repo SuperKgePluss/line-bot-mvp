@@ -256,14 +256,23 @@ function getTodaySummaryAsync(userId) {
 // HANDLE EVENT
 // =====================
 async function handleEvent(event) {
+    let userId = null;
+    let sourceMessageId = null;
+
     try {
         if (event.type !== 'message' || event.message.type !== 'text') {
             return null;
         }
 
-        const sourceMessageId = event.message.id;
-        const userId = event.source?.userId;
+        sourceMessageId = event.message.id;
+        userId = event.source?.userId;
         const text = event.message.text.trim();
+
+        console.log('[INCOMING]', {
+            userId,
+            sourceMessageId,
+            text
+        });
 
         if (!userId) {
             console.error('❌ Missing userId in event source');
@@ -272,8 +281,9 @@ async function handleEvent(event) {
 
         const isSummaryRequest = text.includes("สรุป");
 
-        // 🔹 parse
         const parsedList = parseMessage(text);
+
+        console.log('[PARSED]', parsedList);
 
         let totalIncome = 0;
         let totalExpense = 0;
@@ -283,13 +293,20 @@ async function handleEvent(event) {
             if (tx.type === "expense") totalExpense += tx.amount;
         });
 
-        // 🔹 save (await จริง)
         if (parsedList.length > 0) {
             await Promise.all(
                 parsedList.map((tx, index) =>
                     saveTransaction(userId, tx, sourceMessageId, index)
                 )
             );
+        }
+
+        if (parsedList.length > 0) {
+            console.log('[SAVED]', {
+                count: parsedList.length,
+                totalIncome,
+                totalExpense
+            });
         }
 
         let replyText = "";
@@ -312,9 +329,10 @@ async function handleEvent(event) {
             replyText += "\n";
         }
 
-        // 🔹 summary
         if (isSummaryRequest) {
             const summary = await getTodaySummaryAsync(userId);
+
+            console.log('[SUMMARY]', summary);
 
             replyText += `📊 สรุปวันนี้
 
@@ -323,7 +341,6 @@ async function handleEvent(event) {
 📦 คงเหลือ: ${formatAmount(summary.balance)} บาท${summary.balance < 0 ? ' ⚠️' : ''}`;
         }
 
-        // กันกรณีข้อความว่าง
         if (!replyText.trim()) {
             replyText = "❌ ไม่เข้าใจ ลองพิมพ์:\nขาย 3000\nซื้อกาแฟ 100";
         }
@@ -338,6 +355,13 @@ async function handleEvent(event) {
 
         const isDuplicate =
             error && error.message && error.message.includes('UNIQUE constraint failed');
+
+        if (isDuplicate) {
+            console.log('[DUPLICATE]', {
+                userId,
+                sourceMessageId
+            });
+        }
 
         try {
             return await client.replyMessage(event.replyToken, {
