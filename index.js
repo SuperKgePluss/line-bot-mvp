@@ -467,7 +467,6 @@ app.get('/debug/daily-summary', (req, res) => {
 });
 
 app.get('/dashboard', (req, res) => {
-    const { userId } = req.query;
     res.send(renderDashboardPage(process.env.LIFF_ID));
 });
 

@@ -1,10 +1,10 @@
-﻿function renderDashboardPage(userId) {
-    if (!userId) {
+﻿function renderDashboardPage(liffId) {
+    if (!liffId) {
         return `
             <html>
                 <head>
                     <title>Dashboard</title>
-                    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+                    <meta name="viewport" content="width=device-width, initial-scale=1" />
                     <style>
                         body {
                             font-family: Arial, sans-serif;
@@ -34,9 +34,8 @@
                 <body>
                     <div class="box">
                         <h1>📊 Finance Dashboard</h1>
-                        <p class="error">Missing userId</p>
-                        <p>ให้เปิดด้วยรูปแบบ:</p>
-                        <p><code>/dashboard?userId=YOUR_USER_ID</code></p>
+                        <p class="error">Missing LIFF ID</p>
+                        <p>กรุณาตั้งค่า LIFF_ID ใน server</p>
                     </div>
                 </body>
             </html>
@@ -49,6 +48,7 @@
                 <title>Dashboard</title>
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
                 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+                <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
                 <style>
                     * {
                         box-sizing: border-box;
@@ -181,7 +181,7 @@
                     <div class="header">
                         <h1>📊 Finance Dashboard</h1>
                         <div class="sub">LINE OA Chatbot รายรับ–รายจ่าย</div>
-                        <div class="user">userId: ${userId}</div>
+                        <div class="user" id="userText">กำลังโหลด user...</div>
                     </div>
 
                     <div class="toolbar">
@@ -245,8 +245,10 @@
                         </div>
                     </div>
                 </div>
+
                 <script>
-                    const userId = ${JSON.stringify(userId)};
+                    const LIFF_ID = ${JSON.stringify(liffId)};
+                    let currentUserId = null;
                     let dailyChart = null;
 
                     function formatCurrency(value) {
@@ -301,7 +303,7 @@
                                 '</tr>';
 
                             const data = await fetchJson(
-                                '/debug/recent?userId=' + encodeURIComponent(userId) + '&limit=20'
+                                '/debug/recent?userId=' + encodeURIComponent(currentUserId) + '&limit=20'
                             );
 
                             renderRecentTable(data.items || []);
@@ -330,7 +332,7 @@
                             const days = document.getElementById('days').value;
 
                             const data = await fetchJson(
-                                '/debug/daily-summary?userId=' + encodeURIComponent(userId) + '&days=' + days
+                                '/debug/daily-summary?userId=' + encodeURIComponent(currentUserId) + '&days=' + days
                             );
 
                             const items = data.items || [];
@@ -396,6 +398,33 @@
                         });
                     }
 
+                    async function initDashboard() {
+                        try {
+                            await liff.init({ liffId: LIFF_ID });
+
+                            if (!liff.isLoggedIn()) {
+                                liff.login();
+                                return;
+                            }
+
+                            const context = liff.getContext();
+                            currentUserId = context && context.userId ? context.userId : null;
+
+                            if (!currentUserId) {
+                                document.getElementById('userText').textContent = 'ไม่พบ userId จาก LIFF';
+                                return;
+                            }
+
+                            document.getElementById('userText').textContent = 'userId: ' + currentUserId;
+
+                            await loadRecentTransactions();
+                            await loadSummary();
+                        } catch (error) {
+                            console.error('initDashboard error:', error);
+                            document.getElementById('userText').textContent = 'โหลด LIFF ไม่สำเร็จ';
+                        }
+                    }
+
                     document.getElementById('reloadBtn').addEventListener('click', function() {
                         loadRecentTransactions();
                         loadSummary();
@@ -405,8 +434,7 @@
                         loadSummary();
                     });
 
-                    loadRecentTransactions();
-                    loadSummary();
+                    initDashboard();
                 </script>
             </body>
         </html>
