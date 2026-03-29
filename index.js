@@ -346,7 +346,7 @@ async function handleEvent(event) {
 
             console.log('[SUMMARY]', summary);
 
-            replyText += `📊 สรุปวันนี้
+            replyText += `📊 สรุปรายการวันนี้
 
 💰 รายรับทั้งหมด: ${formatAmount(summary.income)} บาท
 💸 รายจ่ายทั้งหมด: ${formatAmount(summary.expense)} บาท
