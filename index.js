@@ -202,27 +202,29 @@ app.post('/webhook', line.middleware(config), (req, res) => {
 function classifyCategory(text) {
     const input = String(text || '').trim().toLowerCase();
 
-    if (!input) {
-        return 'อื่นๆ';
-    }
+    if (!input) return 'อื่นๆ';
 
-    const sortedRules = CATEGORY_RULES
-        .slice()
-        .sort((a, b) => (a.priority || 999) - (b.priority || 999));
-
-    for (const rule of sortedRules) {
+    // 1. เช็ค pattern ก่อน (แม่นสุด)
+    for (const rule of CATEGORY_RULES) {
         const matchedPattern = (rule.patterns || []).some((pattern) => pattern.test(input));
         if (matchedPattern) {
             return rule.name;
         }
+    }
 
+    // 2. trigger + keyword
+    for (const rule of CATEGORY_RULES) {
         const hasTrigger = (rule.triggers || []).some((trigger) => input.includes(trigger));
         const hasKeyword = (rule.keywords || []).some((keyword) => input.includes(keyword));
 
         if (hasTrigger && hasKeyword) {
             return rule.name;
         }
+    }
 
+    // 3. keyword อย่างเดียว (fallback)
+    for (const rule of CATEGORY_RULES) {
+        const hasKeyword = (rule.keywords || []).some((keyword) => input.includes(keyword));
         if (hasKeyword) {
             return rule.name;
         }

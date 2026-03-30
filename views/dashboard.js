@@ -217,8 +217,8 @@
 
                         <div class="section">
                             <h2>Category Summary</h2>
-                            <div class="chart-placeholder">
-                                พื้นที่สำหรับ Category Chart
+                            <div id="categoryChartWrap" class="chart-placeholder" style="min-height: 320px;">
+                                <canvas id="categoryChart"></canvas>
                             </div>
                         </div>
                     </div>
@@ -250,6 +250,7 @@
                     const LIFF_ID = ${JSON.stringify(liffId)};
                     let currentUserId = null;
                     let dailyChart = null;
+                    let categoryChart = null;
 
                     function formatCurrency(value) {
                         return Number(value || 0).toLocaleString('en-US') + ' บาท';
@@ -344,6 +345,127 @@
                         }
                     }
 
+                    async function loadCategorySummary() {
+                        const wrap = document.getElementById('categoryChartWrap');
+                    
+                        try {
+                            wrap.innerHTML = '<canvas id="categoryChart"></canvas>';
+                    
+                            const data = await fetchJson(
+                                '/debug/category-summary?userId=' + encodeURIComponent(currentUserId)
+                            );
+                    
+                            const items = data.items || [];
+                            renderCategoryChart(items);
+                        } catch (error) {
+                            console.error('loadCategorySummary error:', error);
+                    
+                            wrap.innerHTML = `
+                            < div style = "
+                        display: flex;
+                        align - items: center;
+                        justify - content: center;
+                        min - height: 280px;
+                        text - align: center;
+                        color:#888;
+                        padding: 20px;
+                        ">
+                                    โหลด Category Summary ไม่สำเร็จ
+                                </div >
+                            `;
+                        }
+                    }
+                    
+                    function renderCategoryChart(items) {
+                        const wrap = document.getElementById('categoryChartWrap');
+                    
+                        if (!items || items.length === 0) {
+                            wrap.innerHTML = `
+                            < div style = "
+                        display: flex;
+                        align - items: center;
+                        justify - content: center;
+                        min - height: 280px;
+                        text - align: center;
+                        color:#888;
+                        padding: 20px;
+                        ">
+                        ยังไม่มีข้อมูลหมวดหมู่สำหรับวันนี้
+                                </div >
+                            `;
+                            return;
+                        }
+                    
+                        const expenseItems = items.filter(function(item) {
+                            return item.type === 'expense';
+                        });
+                    
+                        if (expenseItems.length === 0) {
+                            wrap.innerHTML = `
+                            < div style = "
+                        display: flex;
+                        align - items: center;
+                        justify - content: center;
+                        min - height: 280px;
+                        text - align: center;
+                        color:#888;
+                        padding: 20px;
+                        ">
+                        ยังไม่มีข้อมูลรายจ่ายสำหรับวันนี้
+                                </div >
+                            `;
+                            return;
+                        }
+                    
+                        wrap.innerHTML = '<canvas id="categoryChart"></canvas>';
+                    
+                        const canvas = document.getElementById('categoryChart');
+                    
+                        const labels = expenseItems.map(function(item) {
+                            return item.category || 'อื่นๆ';
+                        });
+                    
+                        const values = expenseItems.map(function(item) {
+                            return Number(item.total || 0);
+                        });
+                    
+                        if (categoryChart) {
+                            categoryChart.destroy();
+                        }
+                    
+                        categoryChart = new Chart(canvas, {
+                            type: 'doughnut',
+                            data: {
+                                labels: labels,
+                                datasets: [
+                                    {
+                                        label: 'รายจ่ายตามหมวดหมู่',
+                                        data: values,
+                                        borderWidth: 1
+                                    }
+                                ]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                    legend: {
+                                        position: 'bottom'
+                                    },
+                                    tooltip: {
+                                        callbacks: {
+                                            label: function(context) {
+                                                const label = context.label || '';
+                                                const value = context.raw || 0;
+                                                return label + ': ' + formatCurrency(value);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                    }
+
                     function renderDailyChart(items) {
                         const canvas = document.getElementById('dailyChart');
                         if (!canvas) return;
@@ -419,6 +541,7 @@
 
                             await loadRecentTransactions();
                             await loadSummary();
+                            await loadCategorySummary();
                         } catch (error) {
                             console.error('initDashboard error:', error);
                             document.getElementById('userText').textContent = 'โหลด LIFF ไม่สำเร็จ';
@@ -428,6 +551,7 @@
                     document.getElementById('reloadBtn').addEventListener('click', function() {
                         loadRecentTransactions();
                         loadSummary();
+                        loadCategorySummary();
                     });
 
                     document.getElementById('days').addEventListener('change', function() {
