@@ -16,7 +16,10 @@ const app = express();
 
 const config = {
     channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
-    channelSecret: process.env.LINE_CHANNEL_SECRET
+    channelSecret: process.env.LINE_CHANNEL_SECRET,
+    httpConfig: {
+        timeout: 10000 // 10 วินาที
+    }
 };
 
 if (!process.env.LINE_CHANNEL_ACCESS_TOKEN || !process.env.LINE_CHANNEL_SECRET) {
@@ -174,25 +177,23 @@ const CATEGORY_RULES = [
 // =====================
 // WEBHOOK
 // =====================
-app.post('/webhook', line.middleware(config), async (req, res) => {
-    try {
-        const events = req.body.events || [];
+app.post('/webhook', line.middleware(config), (req, res) => {
+    const events = req.body.events || [];
 
-        await Promise.all(
-            events.map(async (event) => {
-                try {
-                    await handleEvent(event);
-                } catch (eventError) {
-                    console.error('❌ event processing error:', eventError);
-                }
-            })
-        );
+    // ตอบ LINE ให้เร็วที่สุดก่อน
+    res.status(200).end();
 
-        res.status(200).end();
-    } catch (error) {
-        console.error('❌ webhook error:', error);
-        res.status(500).end();
-    }
+    Promise.all(
+        events.map(async (event) => {
+            try {
+                await handleEvent(event);
+            } catch (eventError) {
+                console.error('❌ event processing error:', eventError);
+            }
+        })
+    ).catch((error) => {
+        console.error('❌ webhook background error:', error);
+    });
 });
 
 // =====================
@@ -274,6 +275,18 @@ function requireUserId(res, userId) {
         return false;
     }
     return true;
+}
+
+function isLineNetworkTimeout(error) {
+    return (
+        error &&
+        (
+            error.code === 'ETIMEDOUT' ||
+            error.code === 'ECONNRESET' ||
+            error.code === 'ECONNABORTED' ||
+            (error.message && error.message.includes('ETIMEDOUT'))
+        )
+    );
 }
 
 // =====================
@@ -416,6 +429,13 @@ function getTodaySummaryAsync(userId) {
     return Promise.resolve(getTodaySummary(userId));
 }
 
+async function safeReply(replyToken, text) {
+    return await client.replyMessage(replyToken, {
+        type: 'text',
+        text
+    });
+}
+
 // =====================
 // HANDLE EVENT
 // =====================
@@ -509,10 +529,7 @@ async function handleEvent(event) {
             replyText = "❌ ไม่เข้าใจ ลองพิมพ์:\nขาย 3000\nซื้อกาแฟ 100";
         }
 
-        return await client.replyMessage(event.replyToken, {
-            type: 'text',
-            text: replyText
-        });
+        return await safeReply(event.replyToken, replyText);
 
     } catch (error) {
         console.error('❌ handleEvent error:', error);
@@ -525,15 +542,22 @@ async function handleEvent(event) {
                 userId,
                 sourceMessageId
             });
+
+            try {
+                return await safeReply(event.replyToken, '⚠️ ข้อความนี้ถูกบันทึกไปแล้ว');
+            } catch (replyError) {
+                console.error('❌ duplicate reply error:', replyError);
+                return null;
+            }
+        }
+
+        if (isLineNetworkTimeout(error)) {
+            console.error('❌ LINE reply timeout - saved data may already exist');
+            return null;
         }
 
         try {
-            return await client.replyMessage(event.replyToken, {
-                type: 'text',
-                text: isDuplicate
-                    ? '⚠️ ข้อความนี้ถูกบันทึกไปแล้ว'
-                    : '⚠️ ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง'
-            });
+            return await safeReply(event.replyToken, '⚠️ ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง');
         } catch (replyError) {
             console.error('❌ replyMessage error:', replyError);
             return null;
