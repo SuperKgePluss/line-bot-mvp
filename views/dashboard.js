@@ -79,6 +79,7 @@
                         margin-top: 12px;
                         font-size: 14px;
                         color: #444;
+                        word-break: break-all;
                     }
                     .toolbar {
                         margin-bottom: 20px;
@@ -146,6 +147,11 @@
                         background: #fafbff;
                         text-align: center;
                         padding: 20px;
+                    }
+                    .category-canvas-wrap {
+                        position: relative;
+                        min-height: 320px;
+                        width: 100%;
                     }
                     .table-wrap {
                         overflow-x: auto;
@@ -218,7 +224,9 @@
                         <div class="section">
                             <h2>Category Summary</h2>
                             <div id="categoryChartWrap" class="chart-placeholder" style="min-height: 320px;">
-                                <canvas id="categoryChart"></canvas>
+                                <div class="category-canvas-wrap">
+                                    <canvas id="categoryChart"></canvas>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -260,6 +268,32 @@
                         if (type === 'income') return 'รายรับ';
                         if (type === 'expense') return 'รายจ่าย';
                         return type || '-';
+                    }
+
+                    function setCategoryEmptyState(message) {
+                        const wrap = document.getElementById('categoryChartWrap');
+                        wrap.innerHTML = \`
+                            <div style="
+                                display:flex;
+                                align-items:center;
+                                justify-content:center;
+                                min-height:280px;
+                                text-align:center;
+                                color:#888;
+                                padding:20px;
+                            ">
+                                \${message}
+                            </div>
+                        \`;
+                    }
+
+                    function resetCategoryCanvas() {
+                        const wrap = document.getElementById('categoryChartWrap');
+                        wrap.innerHTML = \`
+                            <div class="category-canvas-wrap">
+                                <canvas id="categoryChart"></canvas>
+                            </div>
+                        \`;
                     }
 
                     async function fetchJson(url) {
@@ -319,8 +353,14 @@
                     }
 
                     function renderSummary(items) {
-                        const income = items.reduce((sum, item) => sum + Number(item.income || 0), 0);
-                        const expense = items.reduce((sum, item) => sum + Number(item.expense || 0), 0);
+                        const income = items.reduce(function(sum, item) {
+                            return sum + Number(item.income || 0);
+                        }, 0);
+
+                        const expense = items.reduce(function(sum, item) {
+                            return sum + Number(item.expense || 0);
+                        }, 0);
+
                         const balance = income - expense;
 
                         document.getElementById('incomeValue').textContent = formatCurrency(income);
@@ -346,93 +386,52 @@
                     }
 
                     async function loadCategorySummary() {
-                        const wrap = document.getElementById('categoryChartWrap');
-                    
                         try {
-                            wrap.innerHTML = '<canvas id="categoryChart"></canvas>';
-                    
+                            resetCategoryCanvas();
+
                             const data = await fetchJson(
                                 '/debug/category-summary?userId=' + encodeURIComponent(currentUserId)
                             );
-                    
+
                             const items = data.items || [];
                             renderCategoryChart(items);
                         } catch (error) {
                             console.error('loadCategorySummary error:', error);
-                    
-                            wrap.innerHTML = `
-                                <div style="
-                                    display:flex;
-                                    align-items:center;
-                                    justify-content:center;
-                                    min-height:280px;
-                                    text-align:center;
-                                    color:#888;
-                                    padding:20px;
-                                ">
-                                    โหลด Category Summary ไม่สำเร็จ
-                                </div>
-                            `;
+                            setCategoryEmptyState('โหลด Category Summary ไม่สำเร็จ');
                         }
                     }
-                    
+
                     function renderCategoryChart(items) {
-                        const wrap = document.getElementById('categoryChartWrap');
-                    
                         if (!items || items.length === 0) {
-                            wrap.innerHTML = `
-                                <div style="
-                                    display:flex;
-                                    align-items:center;
-                                    justify-content:center;
-                                    min-height:280px;
-                                    text-align:center;
-                                    color:#888;
-                                    padding:20px;
-                                ">
-                                    ยังไม่มีข้อมูลหมวดหมู่สำหรับวันนี้
-                                </div>
-                            `;
+                            setCategoryEmptyState('ยังไม่มีข้อมูลหมวดหมู่สำหรับวันนี้');
                             return;
                         }
-                    
+
                         const expenseItems = items.filter(function(item) {
                             return item.type === 'expense';
                         });
-                    
+
                         if (expenseItems.length === 0) {
-                            wrap.innerHTML = `
-                                <div style="
-                                    display:flex;
-                                    align-items:center;
-                                    justify-content:center;
-                                    min-height:280px;
-                                    text-align:center;
-                                    color:#888;
-                                    padding:20px;
-                                ">
-                                    ยังไม่มีข้อมูลรายจ่ายสำหรับวันนี้
-                                </div>
-                            `;
+                            setCategoryEmptyState('ยังไม่มีข้อมูลรายจ่ายสำหรับวันนี้');
                             return;
                         }
-                    
-                        wrap.innerHTML = '<canvas id="categoryChart"></canvas>';
-                    
+
+                        resetCategoryCanvas();
+
                         const canvas = document.getElementById('categoryChart');
-                    
+
                         const labels = expenseItems.map(function(item) {
                             return item.category || 'อื่นๆ';
                         });
-                    
+
                         const values = expenseItems.map(function(item) {
                             return Number(item.total || 0);
                         });
-                    
+
                         if (categoryChart) {
                             categoryChart.destroy();
                         }
-                    
+
                         categoryChart = new Chart(canvas, {
                             type: 'doughnut',
                             data: {
