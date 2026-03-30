@@ -361,17 +361,17 @@
                             console.error('loadCategorySummary error:', error);
                     
                             wrap.innerHTML = `
-                            < div style = "
-                        display: flex;
-                        align - items: center;
-                        justify - content: center;
-                        min - height: 280px;
-                        text - align: center;
-                        color:#888;
-                        padding: 20px;
-                        ">
+                                <div style="
+                                    display:flex;
+                                    align-items:center;
+                                    justify-content:center;
+                                    min-height:280px;
+                                    text-align:center;
+                                    color:#888;
+                                    padding:20px;
+                                ">
                                     โหลด Category Summary ไม่สำเร็จ
-                                </div >
+                                </div>
                             `;
                         }
                     }
@@ -381,17 +381,17 @@
                     
                         if (!items || items.length === 0) {
                             wrap.innerHTML = `
-                            < div style = "
-                        display: flex;
-                        align - items: center;
-                        justify - content: center;
-                        min - height: 280px;
-                        text - align: center;
-                        color:#888;
-                        padding: 20px;
-                        ">
-                        ยังไม่มีข้อมูลหมวดหมู่สำหรับวันนี้
-                                </div >
+                                <div style="
+                                    display:flex;
+                                    align-items:center;
+                                    justify-content:center;
+                                    min-height:280px;
+                                    text-align:center;
+                                    color:#888;
+                                    padding:20px;
+                                ">
+                                    ยังไม่มีข้อมูลหมวดหมู่สำหรับวันนี้
+                                </div>
                             `;
                             return;
                         }
@@ -402,16 +402,16 @@
                     
                         if (expenseItems.length === 0) {
                             wrap.innerHTML = `
-                            < div style = "
-                        display: flex;
-                        align - items: center;
-                        justify - content: center;
-                        min - height: 280px;
-                        text - align: center;
-                        color:#888;
-                        padding: 20px;
-                        ">
-                        ยังไม่มีข้อมูลรายจ่ายสำหรับวันนี้
+                                    < div style = "
+                                display: flex;
+                                align - items: center;
+                                justify - content: center;
+                                min - height: 280px;
+                                text - align: center;
+                                color:#888;
+                                padding: 20px;
+                                ">
+                                ยังไม่มีข้อมูลรายจ่ายสำหรับวันนี้
                                 </div >
                             `;
                             return;
