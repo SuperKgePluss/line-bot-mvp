@@ -402,17 +402,17 @@
                     
                         if (expenseItems.length === 0) {
                             wrap.innerHTML = `
-                                    < div style = "
-                                display: flex;
-                                align - items: center;
-                                justify - content: center;
-                                min - height: 280px;
-                                text - align: center;
-                                color:#888;
-                                padding: 20px;
+                                <div style="
+                                    display:flex;
+                                    align-items:center;
+                                    justify-content:center;
+                                    min-height:280px;
+                                    text-align:center;
+                                    color:#888;
+                                    padding:20px;
                                 ">
-                                ยังไม่มีข้อมูลรายจ่ายสำหรับวันนี้
-                                </div >
+                                    ยังไม่มีข้อมูลรายจ่ายสำหรับวันนี้
+                                </div>
                             `;
                             return;
                         }
