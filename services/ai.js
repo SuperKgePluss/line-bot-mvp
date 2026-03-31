@@ -1,9 +1,14 @@
-﻿const {
+﻿const OpenAI = require('openai');
+const {
     getTodaySummary,
     getRecentTransactions,
     getTodayCategorySummary,
     getDailySummary
 } = require('../db/database');
+
+const client = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY
+});
 
 function formatCurrency(n) {
     return Number(n || 0).toLocaleString('en-US');
@@ -27,45 +32,109 @@ function hasEnoughData(data) {
     return data.recent && data.recent.length >= 3;
 }
 
-// 🔥 MOCK AI (ยังไม่ใช้ OpenAI)
-function mockAIResponse(data) {
-    const { todaySummary, category } = data;
+function buildPrompt(data) {
+    const { todaySummary, daily, category, recent } = data;
 
-    let topCategory = null;
+    const summaryText = [
+        `รายรับวันนี้: ${todaySummary.income || 0} บาท`,
+        `รายจ่ายวันนี้: ${todaySummary.expense || 0} บาท`,
+        `คงเหลือวันนี้: ${todaySummary.balance || 0} บาท`
+    ].join('\n');
 
-    if (category && category.length > 0) {
-        const expenseCats = category.filter(c => c.type === 'expense');
-        if (expenseCats.length > 0) {
-            topCategory = expenseCats[0].category;
-        }
-    }
+    const dailyText = (daily || []).length > 0
+        ? daily.map(item =>
+            `วันที่ ${item.date} | รายรับ ${item.income || 0} | รายจ่าย ${item.expense || 0} | คงเหลือ ${item.balance || 0}`
+        ).join('\n')
+        : 'ไม่มีข้อมูล';
+
+    const categoryText = (category || []).length > 0
+        ? category.map(item =>
+            `หมวด ${item.category || 'อื่นๆ'} | ประเภท ${item.type} | จำนวนรายการ ${item.count || 0} | รวม ${item.total || 0}`
+        ).join('\n')
+        : 'ไม่มีข้อมูล';
+
+    const recentText = (recent || []).length > 0
+        ? recent.map(item =>
+            `${item.createdAt} | ${item.type} | ${item.note || '-'} | ${item.category || 'อื่นๆ'} | ${item.amount || 0} บาท`
+        ).join('\n')
+        : 'ไม่มีข้อมูล';
 
     return `
-📊 ภาพรวม
-วันนี้คุณมีรายรับ ${formatCurrency(todaySummary.income)} บาท
-รายจ่าย ${formatCurrency(todaySummary.expense)} บาท
+คุณคือผู้ช่วยวิเคราะห์การเงินสำหรับเกษตรกรไทย
 
-${todaySummary.balance < 0 ? '⚠️ รายจ่ายมากกว่ารายรับ' : '✅ ยังมีเงินเหลือ'}
+หน้าที่:
+- วิเคราะห์พฤติกรรมรายรับรายจ่ายจากข้อมูลจริง
+- สรุปให้เข้าใจง่าย
+- ให้คำแนะนำที่ใช้ได้จริง
+- ห้ามเดาข้อมูลเกินจากที่มี
+- ถ้าข้อมูลยังน้อย ให้พูดอย่างระมัดระวัง
+- ใช้ภาษาไทยง่าย ๆ ไม่ทางการเกินไป
+- คำตอบต้องสั้น กระชับ และอ่านง่ายใน LINE
+
+ข้อมูลผู้ใช้:
+
+[SUMMARY]
+${summaryText}
+
+[DAILY 7 DAYS]
+${dailyText}
+
+[CATEGORY TODAY]
+${categoryText}
+
+[RECENT TRANSACTIONS]
+${recentText}
+
+กรุณาตอบใน format นี้เท่านั้น:
+
+📊 ภาพรวม
+- ...
+- ...
 
 ⚠️ สิ่งที่ควรระวัง
-${topCategory ? `- หมวด ${topCategory} ใช้เงินค่อนข้างสูง` : '- ยังไม่มีข้อมูลหมวดชัดเจน'}
+- ...
+- ...
 
 💡 คำแนะนำ
-1. ควบคุมค่าใช้จ่ายหมวดหลัก
-2. บันทึกรายรับเพิ่มให้ครบ
-3. ตรวจสอบต้นทุนที่ลดได้
+1. ...
+2. ...
+3. ...
+
+เงื่อนไขเพิ่มเติม:
+- ถ้าไม่มีประเด็นเตือนจริง ๆ ให้เขียนว่า "- ยังไม่พบจุดน่ากังวลชัดเจน"
+- ห้ามตอบยาวเกิน 900 ตัวอักษร
 `.trim();
 }
 
+async function callOpenAIInsight(prompt) {
+    const response = await client.responses.create({
+        model: process.env.OPENAI_MODEL || 'gpt-5.4',
+        input: prompt
+    });
+
+    return response.output_text?.trim() || '⚠️ ไม่สามารถสร้างคำวิเคราะห์ได้ในขณะนี้';
+}
+
 async function generateAIInsight(userId) {
+    if (!process.env.OPENAI_API_KEY) {
+        return '⚠️ ระบบวิเคราะห์ยังไม่ได้ตั้งค่า OpenAI API Key';
+    }
+
     const data = buildInsightData(userId);
 
     if (!hasEnoughData(data)) {
         return '📊 ยังมีข้อมูลไม่เพียงพอสำหรับการวิเคราะห์\nลองบันทึกเพิ่มอีกสัก 2-3 รายการแล้วลองใหม่อีกครั้ง';
     }
 
-    // 🚧 ตอนนี้ยังไม่เรียก OpenAI
-    return mockAIResponse(data);
+    const prompt = buildPrompt(data);
+
+    try {
+        return await callOpenAIInsight(prompt);
+    } catch (error) {
+        console.error('❌ OpenAI insight error:', error);
+
+        return '⚠️ ระบบวิเคราะห์ขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง';
+    }
 }
 
 module.exports = {
