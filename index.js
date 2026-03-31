@@ -344,11 +344,15 @@ function normalizeText(text) {
 }
 
 function detectType(text) {
-    if (/(ขาย|รายรับ|รับมา|ได้เงิน|ได้มา|โอนเข้า|เข้า)/.test(text)) {
+    const input = String(text || '').trim().toLowerCase();
+
+    if (!input) return null;
+
+    if (/(ขาย|รายรับ|รับมา|ได้เงิน|ได้มา|โอนเข้า|เงินเข้า|รับเงิน)/.test(input)) {
         return "income";
     }
 
-    if (/(ซื้อ|รายจ่าย|จ่าย|ค่า|โอนออก|เสีย|หมดไป)/.test(text)) {
+    if (/(ซื้อ|รายจ่าย|จ่าย|ค่า|ค่าส่ง|โอนออก|เสีย|หมดไป|ผ่อน|ชำระ)/.test(input)) {
         return "expense";
     }
 
@@ -356,10 +360,90 @@ function detectType(text) {
 }
 
 function cleanItemText(text) {
-    return text
-        .replace(/(ขาย|ซื้อ|ได้|จ่าย|ค่า|รายรับ|รายจ่าย|บาท|แล้ว|และ|กับ|จากนั้น|เอาไป)/g, ' ')
+    return String(text || '')
+        .replace(/(รายรับ|รายจ่าย|บาทถ้วน|บาท|แล้ว|และ|กับ|จากนั้น|เอาไป|ได้เงิน|ได้มา|รับมา)/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
+}
+
+const NON_MONEY_UNITS = [
+    'กิโล', 'กก', 'ก.ก.', 'กิโลกรัม', 'โล',
+    'ตัว', 'ชิ้น', 'ถุง', 'ลัง', 'ฟอง', 'แพ็ค', 'แพก',
+    'ไร่', 'งาน', 'เมตร', 'ม.', 'ลิตร', 'ตัน', 'กระสอบ',
+    'ใบ', 'ขวด', 'กล่อง', 'ชุด', 'คัน', 'เครื่อง'
+];
+
+function escapeRegex(text) {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function isQuantityUnitAfterNumber(text, amountEnd) {
+    const tail = text.slice(amountEnd, amountEnd + 20).trim();
+
+    return NON_MONEY_UNITS.some((unit) => {
+        const re = new RegExp(`^${escapeRegex(unit)}(?:\\b|\\s|$)`);
+        return re.test(tail);
+    });
+}
+
+function scoreAmountCandidate(fullText, amountStart, amountEnd, amount) {
+    let score = 0;
+
+    const left = fullText.slice(Math.max(0, amountStart - 30), amountStart);
+    const right = fullText.slice(amountEnd, Math.min(fullText.length, amountEnd + 30));
+    const around = `${left} ${right}`;
+
+    if (/^(\s*)บาท\b/.test(right)) score += 100;
+    if (/(ได้เงิน|ได้มา|รับมา|รับเงิน|ขาย)/.test(left)) score += 40;
+    if (/(ซื้อ|จ่าย|ค่าส่ง|ค่า|ผ่อน|ชำระ|เติม)/.test(left)) score += 25;
+
+    if (isQuantityUnitAfterNumber(fullText, amountEnd)) score -= 120;
+
+    // ถ้าเป็นเลขเล็กมากและไม่มีคำว่า "บาท" หรือ context เงิน ช่วยกดคะแนนลง
+    if (amount < 1000 && !/บาท/.test(around) && !/(ได้เงิน|ได้มา|รับมา|รับเงิน|ขาย|ซื้อ|จ่าย|ค่า|เติม|ผ่อน)/.test(left)) {
+        score -= 20;
+    }
+
+    return score;
+}
+
+function findBestAmountMatch(text) {
+    const amountRegex = /(\d[\d,]*(?:\.\d+)?)/g;
+    const matches = [...text.matchAll(amountRegex)];
+
+    if (matches.length === 0) return null;
+
+    const candidates = matches
+        .map((match) => {
+            const amountRaw = match[1];
+            const amount = parseFloat(amountRaw.replace(/,/g, ''));
+            const start = match.index;
+            const end = start + amountRaw.length;
+
+            if (!amount || amount <= 0) return null;
+
+            return {
+                match,
+                amountRaw,
+                amount,
+                start,
+                end,
+                score: scoreAmountCandidate(text, start, end, amount)
+            };
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.score - a.score || b.amount - a.amount);
+
+    if (candidates.length === 0) return null;
+
+    const best = candidates[0];
+
+    // ถ้าคะแนนยังติดลบ แปลว่าไม่น่าใช่จำนวนเงิน
+    if (best.score < 0) {
+        return null;
+    }
+
+    return best;
 }
 
 function formatAmount(amount) {
@@ -437,84 +521,76 @@ function isLineNetworkTimeout(error) {
     );
 }
 
-// =====================
-// PARSE MESSAGE
-// =====================
 function parseMessage(text) {
     const normalized = normalizeText(text);
 
-    // ตัดคำสั่งที่ไม่ใช่ transaction ออกก่อน เช่น "สรุป"
     const cleaned = normalized
         .replace(/สรุปวันนี้|สรุปรายวัน|สรุป/g, ' ')
         .trim();
 
-    // หาเลขทุกตัวในข้อความ เช่น 70, 50, 3,000
-    const amountRegex = /(\d[\d,]*(?:\.\d+)?)/g;
-    const matches = [...cleaned.matchAll(amountRegex)];
-
-    if (matches.length === 0) {
+    if (!cleaned) {
         return [];
     }
 
+    const lines = cleaned
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean);
+
+    const inputLines = lines.length > 0 ? lines : [cleaned];
     const results = [];
     let lastType = null;
 
-    for (let i = 0; i < matches.length; i++) {
-        const match = matches[i];
-        const amountRaw = match[1];
-        const amount = parseFloat(amountRaw.replace(/,/g, ''));
+    for (const line of inputLines) {
+        const best = findBestAmountMatch(line);
 
-        if (!amount || amount <= 0) continue;
-
-        const amountStart = match.index;
-        const amountEnd = amountStart + amountRaw.length;
-
-        const prevAmountEnd = i === 0 ? 0 : matches[i - 1].index + matches[i - 1][1].length;
-        const nextAmountStart = i === matches.length - 1 ? cleaned.length : matches[i + 1].index;
-
-        // ข้อความก่อนจำนวนนี้ = context หลักของ transaction
-        const leftContext = cleaned.slice(prevAmountEnd, amountStart).trim();
-
-        // ข้อความหลังจำนวนนี้จนถึงก่อนจำนวนถัดไป
-        const rightContext = cleaned.slice(amountEnd, nextAmountStart).trim();
-
-        // ใช้ข้อความก่อนหน้าเป็นหลัก เพราะ pattern ไทยมักเป็น "ซื้อกาแฟ 70"
-        let rawText = cleanItemText(leftContext);
-
-        // ถ้าก่อนหน้าไม่มีข้อความเลย ลองใช้ข้อความหลัง
-        if (!rawText) {
-            rawText = cleanItemText(rightContext);
+        if (!best) {
+            continue;
         }
 
-        // หา type จาก context ก่อน
+        const leftContext = line.slice(0, best.start).trim();
+        const rightContext = line.slice(best.end).trim();
+
         let type = detectType(leftContext);
 
-        // ถ้ายังไม่เจอ ลองจาก rawText
         if (!type) {
-            type = detectType(rawText);
+            type = detectType(line);
         }
 
-        // ถ้ายังไม่เจอ ใช้ type ล่าสุด
         if (!type && lastType) {
             type = lastType;
         }
 
-        // ถ้ายังไม่เจอจริง ๆ และข้อความดูคล้ายรายการซื้อ ให้ default เป็น expense
-        if (!type && rawText) {
-            type = "expense";
+        // ถ้ายังไม่เจอจริง ๆ แต่บรรทัดดูเป็น transaction ค่อย fallback
+        if (!type && /(ซื้อ|ขาย|จ่าย|ได้เงิน|ได้มา|รับมา|รับเงิน|ค่า|เติม|ผ่อน)/.test(line)) {
+            type = /(ขาย|ได้เงิน|ได้มา|รับมา|รับเงิน)/.test(line) ? 'income' : 'expense';
+        }
+
+        if (!type) {
+            continue;
         }
 
         if (type) {
             lastType = type;
         }
 
-        const category = classifyCategory(rawText || "อื่นๆ");
+        let note = cleanItemText(leftContext);
+
+        if (!note) {
+            note = cleanItemText(line.replace(best.amountRaw, ' '));
+        }
+
+        note = note
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        const category = classifyCategory(note || line || 'อื่นๆ');
 
         results.push({
             type,
-            amount,
+            amount: best.amount,
             category,
-            note: rawText || "ไม่ระบุ"
+            note: note || 'ไม่ระบุ'
         });
     }
 
