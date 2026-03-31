@@ -10,6 +10,78 @@ const {
     getDailySummary
 } = require('./db/database');
 
+// =====================
+// SYSTEM MESSAGES
+// =====================
+const WELCOME_MESSAGE = `
+👋 สวัสดีครับ ระบบบันทึกรายรับ-รายจ่าย
+
+พิมพ์แบบนี้ได้เลย:
+- ซื้อปุ๋ย 500
+- ขายผัก 3000
+
+📊 ดูสรุป:
+พิมพ์ "สรุป"
+
+📱 เปิด Dashboard:
+พิมพ์ "แดชบอร์ด"
+
+❓ วิธีใช้:
+พิมพ์ "ช่วยเหลือ"
+`;
+
+const HELP_MESSAGE = `
+📘 วิธีใช้งาน
+
+✏️ บันทึก:
+- ซื้อปุ๋ย 500
+- ขายไข่ 1200
+
+📌 หลายรายการ:
+ซื้อปุ๋ย 500
+ซื้ออาหารไก่ 300
+
+📊 สรุป:
+พิมพ์ "สรุป"
+
+📱 Dashboard:
+พิมพ์ "แดชบอร์ด"
+`;
+
+const PARSE_ERROR_MESSAGE = `
+❌ ไม่เข้าใจข้อความ
+
+ลองพิมพ์:
+- ซื้อปุ๋ย 500
+- ขายผัก 3000
+
+❓ พิมพ์ "ช่วยเหลือ"
+`;
+
+// =====================
+// COMMAND HELPERS
+// =====================
+function isHelpCommand(text) {
+    return ['ช่วยเหลือ', 'เมนู', 'help'].includes(text.toLowerCase());
+}
+
+function isSummaryCommand(text) {
+    return text.includes('สรุป');
+}
+
+function isDashboardCommand(text) {
+    return ['แดชบอร์ด', 'dashboard'].includes(text.toLowerCase());
+}
+
+function getDashboardUrl(userId) {
+    return `${process.env.BASE_URL}/dashboard`;
+}
+
+function formatDashboardMessage(userId) {
+    const url = getDashboardUrl(userId);
+    return `📊 เปิด Dashboard:\n${url}`;
+}
+
 const { renderDashboardPage } = require('./views/dashboard');
 
 const app = express();
@@ -442,6 +514,10 @@ async function safeReply(replyToken, text) {
 // HANDLE EVENT
 // =====================
 async function handleEvent(event) {
+    if (event.type === 'follow') {
+        return safeReply(event.replyToken, WELCOME_MESSAGE);
+    }
+
     let userId = null;
     let sourceMessageId = null;
 
@@ -453,6 +529,15 @@ async function handleEvent(event) {
         sourceMessageId = event.message.id;
         userId = event.source?.userId;
         const text = event.message.text.trim();
+
+        // ===== COMMAND ROUTING =====
+        if (isHelpCommand(text)) {
+            return safeReply(event.replyToken, HELP_MESSAGE);
+        }
+
+        if (isDashboardCommand(text)) {
+            return safeReply(event.replyToken, formatDashboardMessage(userId));
+        }
 
         console.log('[INCOMING]', {
             userId,
@@ -499,7 +584,7 @@ async function handleEvent(event) {
 
         if (parsedList.length === 0) {
             if (!isSummaryRequest) {
-                replyText = "❌ ไม่เข้าใจ ลองพิมพ์:\nขาย 3000\nซื้อกาแฟ 100";
+                replyText = PARSE_ERROR_MESSAGE;
             }
         } else {
             replyText = "✅ บันทึกเรียบร้อย\n\n📊 รายการล่าสุด\n";
@@ -528,7 +613,7 @@ async function handleEvent(event) {
         }
 
         if (!replyText.trim()) {
-            replyText = "❌ ไม่เข้าใจ ลองพิมพ์:\nขาย 3000\nซื้อกาแฟ 100";
+            replyText = PARSE_ERROR_MESSAGE;
         }
 
         return await safeReply(event.replyToken, replyText);
