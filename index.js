@@ -341,6 +341,55 @@ function formatAmount(amount) {
     return Number(amount || 0).toLocaleString('en-US');
 }
 
+function formatTypeLabel(type) {
+    if (type === 'income') return 'รายรับ';
+    if (type === 'expense') return 'รายจ่าย';
+    return '-';
+}
+
+function formatTransactionLine(tx) {
+    return `- ${tx.note || 'ไม่ระบุ'} | ${formatTypeLabel(tx.type)} | ${formatAmount(tx.amount)} บาท | ${tx.category || 'อื่นๆ'}`;
+}
+
+function formatSuccessReply(parsedList) {
+    if (!parsedList || parsedList.length === 0) {
+        return PARSE_ERROR_MESSAGE;
+    }
+
+    let totalIncome = 0;
+    let totalExpense = 0;
+
+    parsedList.forEach((tx) => {
+        if (tx.type === 'income') totalIncome += tx.amount;
+        if (tx.type === 'expense') totalExpense += tx.amount;
+    });
+
+    let message = `✅ บันทึกเรียบร้อย ${parsedList.length} รายการ\n\n📋 รายการที่บันทึก:\n`;
+
+    message += parsedList
+        .slice(0, 5)
+        .map(formatTransactionLine)
+        .join('\n');
+
+    if (parsedList.length > 5) {
+        message += `\n... และอีก ${parsedList.length - 5} รายการ`;
+    }
+
+    message += '\n\n📊 สรุปจากข้อความนี้\n';
+
+    if (totalIncome > 0) {
+        message += `📈 รายรับ: ${formatAmount(totalIncome)} บาท\n`;
+    }
+
+    if (totalExpense > 0) {
+        message += `📉 รายจ่าย: ${formatAmount(totalExpense)} บาท\n`;
+    }
+
+    message += '\nพิมพ์ "สรุป" เพื่อดูภาพรวมวันนี้';
+
+    return message;
+}
+
 function requireUserId(res, userId) {
     if (!userId) {
         res.status(400).json({
@@ -550,19 +599,11 @@ async function handleEvent(event) {
             return null;
         }
 
-        const isSummaryRequest = text.includes("สรุป");
+        const isSummaryRequest = isSummaryCommand(text);
 
         const parsedList = parseMessage(text);
 
         console.log('[PARSED]', parsedList);
-
-        let totalIncome = 0;
-        let totalExpense = 0;
-
-        parsedList.forEach(tx => {
-            if (tx.type === "income") totalIncome += tx.amount;
-            if (tx.type === "expense") totalExpense += tx.amount;
-        });
 
         if (parsedList.length > 0) {
             await Promise.all(
@@ -574,9 +615,7 @@ async function handleEvent(event) {
 
         if (parsedList.length > 0) {
             console.log('[SAVED]', {
-                count: parsedList.length,
-                totalIncome,
-                totalExpense
+                count: parsedList.length
             });
         }
 
@@ -587,17 +626,7 @@ async function handleEvent(event) {
                 replyText = PARSE_ERROR_MESSAGE;
             }
         } else {
-            replyText = "✅ บันทึกเรียบร้อย\n\n📊 รายการล่าสุด\n";
-
-            if (totalIncome > 0) {
-                replyText += `📈 รายรับ: ${formatAmount(totalIncome)} บาท\n`;
-            }
-
-            if (totalExpense > 0) {
-                replyText += `📉 รายจ่าย: ${formatAmount(totalExpense)} บาท\n`;
-            }
-
-            replyText += "\n";
+            replyText = formatSuccessReply(parsedList) + "\n\n";
         }
 
         if (isSummaryRequest) {
