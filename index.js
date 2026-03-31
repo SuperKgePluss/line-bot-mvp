@@ -9,24 +9,36 @@ const {
     getTodayCategorySummary,
     getDailySummary
 } = require('./db/database');
+const { generateAIInsight } = require('./services/ai');
 
 // =====================
 // SYSTEM MESSAGES
 // =====================
 const WELCOME_MESSAGE = `
-👋 สวัสดีครับ ระบบบันทึกรายรับ-รายจ่าย
+👋 สวัสดีครับ นี่คือระบบบันทึกรายรับ-รายจ่ายสำหรับเกษตรกร
 
-พิมพ์แบบนี้ได้เลย:
-- ซื้อปุ๋ย 500
-- ขายผัก 3000
+ช่วยคุณ:
+✅ บันทึกเงินเข้า-ออก ง่าย ๆ
+✅ สรุปยอดอัตโนมัติ
+✅ ดูภาพรวมผ่าน Dashboard
+
+━━━━━━━━━━━
+
+✏️ เริ่มใช้งานทันที:
+
+ลองพิมพ์:
+👉 ซื้อปุ๋ย 500
+👉 ขายผัก 3000
+
+━━━━━━━━━━━
 
 📊 ดูสรุป:
 พิมพ์ "สรุป"
 
 📱 เปิด Dashboard:
-พิมพ์ "แดชบอร์ด"
+พิมพ์ "แดชบอร์ด" หรือกดเมนูด้านล่าง
 
-❓ วิธีใช้:
+❓ วิธีใช้เพิ่มเติม:
 พิมพ์ "ช่วยเหลือ"
 `;
 
@@ -80,6 +92,19 @@ function getDashboardUrl(userId) {
 function formatDashboardMessage(userId) {
     const url = getDashboardUrl(userId);
     return `📊 เปิด Dashboard:\n${url}`;
+}
+
+function isAIInsightCommand(text) {
+    const t = text.toLowerCase().trim();
+
+    return (
+        t === 'วิเคราะห์' ||
+        t === 'ขอคำแนะนำ' ||
+        t === 'รายจ่ายเป็นยังไงบ้าง' ||
+        t === 'ช่วยดูการเงินหน่อย' ||
+        t === 'ช่วยดูการเงิน' ||
+        t === 'insight'
+    );
 }
 
 const { renderDashboardPage } = require('./views/dashboard');
@@ -600,6 +625,12 @@ async function handleEvent(event) {
         }
 
         const isSummaryRequest = isSummaryCommand(text);
+
+        // ===== AI INSIGHT =====
+        if (isAIInsightCommand(text)) {
+            const insight = await generateAIInsight(userId);
+            return safeReply(event.replyToken, insight);
+        }
 
         const parsedList = parseMessage(text);
 
