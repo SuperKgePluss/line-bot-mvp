@@ -6,12 +6,20 @@ const {
     getDailySummary
 } = require('../db/database');
 
-const client = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY
-});
+let client = null;
 
-function formatCurrency(n) {
-    return Number(n || 0).toLocaleString('en-US');
+function getOpenAIClient() {
+    if (!process.env.OPENAI_API_KEY) {
+        return null;
+    }
+
+    if (!client) {
+        client = new OpenAI({
+            apiKey: process.env.OPENAI_API_KEY
+        });
+    }
+
+    return client;
 }
 
 function buildInsightData(userId) {
@@ -107,6 +115,12 @@ ${recentText}
 }
 
 async function callOpenAIInsight(prompt) {
+    const client = getOpenAIClient();
+
+    if (!client) {
+        throw new Error('NO_API_KEY');
+    }
+
     const response = await client.responses.create({
         model: process.env.OPENAI_MODEL || 'gpt-5.4',
         input: prompt
@@ -137,6 +151,10 @@ async function generateAIInsight(userId) {
             code: error.code,
             type: error.type
         });
+
+        if (error.message === 'NO_API_KEY') {
+            return '⚠️ ระบบวิเคราะห์ยังไม่พร้อมใช้งานในตอนนี้\nกรุณาลองใหม่ภายหลัง';
+        }
 
         return '⚠️ ตอนนี้ระบบวิเคราะห์ยังไม่พร้อมใช้งาน\nคุณยังสามารถบันทึกข้อมูลและดูสรุปได้ตามปกติ';
     }
