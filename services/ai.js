@@ -117,7 +117,7 @@ async function callOpenAIInsight(prompt) {
 
 async function generateAIInsight(userId) {
     if (!process.env.OPENAI_API_KEY) {
-        return '⚠️ ระบบวิเคราะห์ยังไม่ได้ตั้งค่า OpenAI API Key';
+        return '⚠️ ระบบวิเคราะห์ยังไม่พร้อมใช้งานในตอนนี้\nกรุณาลองใหม่ภายหลัง';
     }
 
     const data = buildInsightData(userId);
@@ -131,9 +131,14 @@ async function generateAIInsight(userId) {
     try {
         return await callOpenAIInsight(prompt);
     } catch (error) {
-        console.error('❌ OpenAI insight error:', error);
+        console.error('❌ OpenAI insight error:', {
+            message: error.message,
+            status: error.status,
+            code: error.code,
+            type: error.type
+        });
 
-        return '⚠️ ระบบวิเคราะห์ขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง';
+        return '⚠️ ตอนนี้ระบบวิเคราะห์ยังไม่พร้อมใช้งาน\nคุณยังสามารถบันทึกข้อมูลและดูสรุปได้ตามปกติ';
     }
 }
 
