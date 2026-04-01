@@ -61,13 +61,14 @@ const HELP_MESSAGE = `
 `;
 
 const PARSE_ERROR_MESSAGE = `
-❌ ไม่เข้าใจข้อความ
+❌ ไม่พบจำนวนเงินในข้อความ
 
 ลองพิมพ์:
-- ซื้อปุ๋ย 500
-- ขายผัก 3000
+- ซื้อปุ๋ย 500 บาท
+- ขายผัก ได้เงิน 3000 บาท
 
-❓ พิมพ์ "ช่วยเหลือ"
+📌 ถ้ามีตัวเลขหลายตัว เช่น "300 กิโล 5000 บาท"
+ระบบจะใช้ตัวเลขที่เป็น "บาท"
 `;
 
 // =====================
@@ -301,7 +302,6 @@ function classifyCategory(text) {
 
     if (!input) return 'อื่นๆ';
 
-    // 1. เช็ค pattern ก่อน (แม่นสุด)
     for (const rule of CATEGORY_RULES) {
         const matchedPattern = (rule.patterns || []).some((pattern) => pattern.test(input));
         if (matchedPattern) {
@@ -309,7 +309,6 @@ function classifyCategory(text) {
         }
     }
 
-    // 2. trigger + keyword
     for (const rule of CATEGORY_RULES) {
         const hasTrigger = (rule.triggers || []).some((trigger) => input.includes(trigger));
         const hasKeyword = (rule.keywords || []).some((keyword) => input.includes(keyword));
@@ -319,7 +318,6 @@ function classifyCategory(text) {
         }
     }
 
-    // 3. keyword อย่างเดียว (fallback)
     for (const rule of CATEGORY_RULES) {
         const hasKeyword = (rule.keywords || []).some((keyword) => input.includes(keyword));
         if (hasKeyword) {
@@ -349,11 +347,11 @@ function detectType(text) {
     if (!input) return null;
 
     if (/(ขาย|รายรับ|รับมา|ได้เงิน|ได้มา|โอนเข้า|เงินเข้า|รับเงิน)/.test(input)) {
-        return "income";
+        return 'income';
     }
 
     if (/(ซื้อ|รายจ่าย|จ่าย|ค่า|ค่าส่ง|โอนออก|เสีย|หมดไป|ผ่อน|ชำระ)/.test(input)) {
-        return "expense";
+        return 'expense';
     }
 
     return null;
@@ -399,7 +397,6 @@ function scoreAmountCandidate(fullText, amountStart, amountEnd, amount) {
 
     if (isQuantityUnitAfterNumber(fullText, amountEnd)) score -= 120;
 
-    // ถ้าเป็นเลขเล็กมากและไม่มีคำว่า "บาท" หรือ context เงิน ช่วยกดคะแนนลง
     if (amount < 1000 && !/บาท/.test(around) && !/(ได้เงิน|ได้มา|รับมา|รับเงิน|ขาย|ซื้อ|จ่าย|ค่า|เติม|ผ่อน)/.test(left)) {
         score -= 20;
     }
@@ -438,7 +435,6 @@ function findBestAmountMatch(text) {
 
     const best = candidates[0];
 
-    // ถ้าคะแนนยังติดลบ แปลว่าไม่น่าใช่จำนวนเงิน
     if (best.score < 0) {
         return null;
     }
@@ -549,7 +545,6 @@ function parseMessage(text) {
         }
 
         const leftContext = line.slice(0, best.start).trim();
-        const rightContext = line.slice(best.end).trim();
 
         let type = detectType(leftContext);
 
@@ -561,8 +556,7 @@ function parseMessage(text) {
             type = lastType;
         }
 
-        // ถ้ายังไม่เจอจริง ๆ แต่บรรทัดดูเป็น transaction ค่อย fallback
-        if (!type && /(ซื้อ|ขาย|จ่าย|ได้เงิน|ได้มา|รับมา|รับเงิน|ค่า|เติม|ผ่อน)/.test(line)) {
+        if (!type && /(ซื้อ|ขาย|จ่าย|ได้เงิน|ได้มา|รับมา|รับเงิน|ค่า|เติม|ผ่อน|จ้าง)/.test(line)) {
             type = /(ขาย|ได้เงิน|ได้มา|รับมา|รับเงิน)/.test(line) ? 'income' : 'expense';
         }
 
@@ -575,7 +569,7 @@ function parseMessage(text) {
         }
 
         let note = cleanItemText(leftContext);
-
+        note = note.replace(/(.+)\s+\1$/, '$1');
         if (!note) {
             note = cleanItemText(line.replace(best.amountRaw, ' '));
         }
@@ -680,7 +674,6 @@ async function handleEvent(event) {
         userId = event.source?.userId;
         const text = event.message.text.trim();
 
-        // ===== COMMAND ROUTING =====
         if (isHelpCommand(text)) {
             return safeReply(event.replyToken, HELP_MESSAGE);
         }
@@ -702,7 +695,6 @@ async function handleEvent(event) {
 
         const isSummaryRequest = isSummaryCommand(text);
 
-        // ===== AI INSIGHT =====
         if (isAIInsightCommand(text)) {
             const insight = await generateAIInsight(userId);
             return safeReply(event.replyToken, insight);
@@ -726,14 +718,14 @@ async function handleEvent(event) {
             });
         }
 
-        let replyText = "";
+        let replyText = '';
 
         if (parsedList.length === 0) {
             if (!isSummaryRequest) {
                 replyText = PARSE_ERROR_MESSAGE;
             }
         } else {
-            replyText = formatSuccessReply(parsedList) + "\n\n";
+            replyText = formatSuccessReply(parsedList) + '\n\n';
         }
 
         if (isSummaryRequest) {
@@ -789,13 +781,16 @@ async function handleEvent(event) {
 }
 
 // =====================
-// SERVER
+// ROOT
 // =====================
 app.get('/', (req, res) => {
-    res.send('LINE Bot Ready | Debug endpoints: /debug/recent, /debug/category-summary, /debug/daily-summary');
+    res.send('LINE Bot Ready');
 });
 
-app.get('/debug/recent', (req, res) => {
+// =====================
+// PRODUCTION API FOR DASHBOARD
+// =====================
+app.get('/api/recent', (req, res) => {
     try {
         const { userId } = req.query;
         const limit = Number(req.query.limit || 20);
@@ -811,7 +806,7 @@ app.get('/debug/recent', (req, res) => {
             items: rows
         });
     } catch (error) {
-        console.error('❌ /debug/recent error:', error);
+        console.error('❌ /api/recent error:', error);
         res.status(500).json({
             ok: false,
             error: 'Internal server error'
@@ -819,7 +814,7 @@ app.get('/debug/recent', (req, res) => {
     }
 });
 
-app.get('/debug/category-summary', (req, res) => {
+app.get('/api/category-summary', (req, res) => {
     try {
         const { userId } = req.query;
 
@@ -833,7 +828,7 @@ app.get('/debug/category-summary', (req, res) => {
             items: rows
         });
     } catch (error) {
-        console.error('❌ /debug/category-summary error:', error);
+        console.error('❌ /api/category-summary error:', error);
         res.status(500).json({
             ok: false,
             error: 'Internal server error'
@@ -841,7 +836,7 @@ app.get('/debug/category-summary', (req, res) => {
     }
 });
 
-app.get('/debug/daily-summary', (req, res) => {
+app.get('/api/daily-summary', (req, res) => {
     try {
         const { userId } = req.query;
         const days = Number(req.query.days || 7);
@@ -857,13 +852,88 @@ app.get('/debug/daily-summary', (req, res) => {
             items: rows
         });
     } catch (error) {
-        console.error('❌ /debug/daily-summary error:', error);
+        console.error('❌ /api/daily-summary error:', error);
         res.status(500).json({
             ok: false,
             error: 'Internal server error'
         });
     }
 });
+
+// =====================
+// DEBUG API
+// =====================
+if (process.env.ENABLE_DEBUG === 'true') {
+    app.get('/debug/recent', (req, res) => {
+        try {
+            const { userId } = req.query;
+            const limit = Number(req.query.limit || 20);
+
+            if (!requireUserId(res, userId)) return;
+
+            const safeLimit = Math.min(Math.max(limit, 1), 100);
+            const rows = getRecentTransactions(userId, safeLimit);
+
+            res.json({
+                ok: true,
+                count: rows.length,
+                items: rows
+            });
+        } catch (error) {
+            console.error('❌ /debug/recent error:', error);
+            res.status(500).json({
+                ok: false,
+                error: 'Internal server error'
+            });
+        }
+    });
+
+    app.get('/debug/category-summary', (req, res) => {
+        try {
+            const { userId } = req.query;
+
+            if (!requireUserId(res, userId)) return;
+
+            const rows = getTodayCategorySummary(userId);
+
+            res.json({
+                ok: true,
+                count: rows.length,
+                items: rows
+            });
+        } catch (error) {
+            console.error('❌ /debug/category-summary error:', error);
+            res.status(500).json({
+                ok: false,
+                error: 'Internal server error'
+            });
+        }
+    });
+
+    app.get('/debug/daily-summary', (req, res) => {
+        try {
+            const { userId } = req.query;
+            const days = Number(req.query.days || 7);
+
+            if (!requireUserId(res, userId)) return;
+
+            const safeDays = Math.min(Math.max(days, 1), 90);
+            const rows = getDailySummary(userId, safeDays);
+
+            res.json({
+                ok: true,
+                count: rows.length,
+                items: rows
+            });
+        } catch (error) {
+            console.error('❌ /debug/daily-summary error:', error);
+            res.status(500).json({
+                ok: false,
+                error: 'Internal server error'
+            });
+        }
+    });
+}
 
 app.get('/dashboard', (req, res) => {
     res.send(renderDashboardPage(process.env.LIFF_ID));

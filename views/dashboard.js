@@ -33,7 +33,7 @@
                 </head>
                 <body>
                     <div class="box">
-                        <h1>📊 Finance Dashboard</h1>
+                        <h1>📊 แดชบอร์ดการเงิน</h1>
                         <p class="error">Missing LIFF ID</p>
                         <p>กรุณาตั้งค่า LIFF_ID ใน server</p>
                     </div>
@@ -185,7 +185,7 @@
             <body>
                 <div class="container">
                     <div class="header">
-                        <h1>📊 Finance Dashboard</h1>
+                        <h1>📊 แดชบอร์ดการเงิน</h1>
                         <div class="sub">LINE OA Chatbot รายรับ–รายจ่าย</div>
                         <div class="user" id="userText">กำลังโหลด user...</div>
                     </div>
@@ -217,12 +217,12 @@
 
                     <div class="chart-grid">
                         <div class="section">
-                            <h2>Daily Summary</h2>
+                            <h2>สรุปรายวัน</h2>
                             <canvas id="dailyChart" height="120"></canvas>
                         </div>
 
                         <div class="section">
-                            <h2>Category Summary</h2>
+                            <h2>สรุปตามหมวดหมู่</h2>
                             <div id="categoryChartWrap" class="chart-placeholder" style="min-height: 320px;">
                                 <div class="category-canvas-wrap">
                                     <canvas id="categoryChart"></canvas>
@@ -232,7 +232,7 @@
                     </div>
 
                     <div class="section">
-                        <h2>Recent Transactions</h2>
+                        <h2>รายการล่าสุด</h2>
                         <div class="table-wrap">
                             <table>
                                 <thead>
@@ -338,7 +338,7 @@
                                 '</tr>';
 
                             const data = await fetchJson(
-                                '/debug/recent?userId=' + encodeURIComponent(currentUserId) + '&limit=20'
+                                '/api/recent?userId=' + encodeURIComponent(currentUserId) + '&limit=20'
                             );
 
                             renderRecentTable(data.items || []);
@@ -373,7 +373,7 @@
                             const days = document.getElementById('days').value;
 
                             const data = await fetchJson(
-                                '/debug/daily-summary?userId=' + encodeURIComponent(currentUserId) + '&days=' + days
+                                '/api/daily-summary?userId=' + encodeURIComponent(currentUserId) + '&days=' + days
                             );
 
                             const items = data.items || [];
@@ -390,14 +390,14 @@
                             resetCategoryCanvas();
 
                             const data = await fetchJson(
-                                '/debug/category-summary?userId=' + encodeURIComponent(currentUserId)
+                                '/api/category-summary?userId=' + encodeURIComponent(currentUserId)
                             );
 
                             const items = data.items || [];
                             renderCategoryChart(items);
                         } catch (error) {
                             console.error('loadCategorySummary error:', error);
-                            setCategoryEmptyState('โหลด Category Summary ไม่สำเร็จ');
+                            setCategoryEmptyState('โหลดสรุปตามหมวดหมู่ไม่สำเร็จ');
                         }
                     }
 
