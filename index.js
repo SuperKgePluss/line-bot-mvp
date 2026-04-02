@@ -322,7 +322,7 @@ app.post('/webhook', line.middleware(config), (req, res) => {
 app.use(express.json());
 
 
-app.post('/api/reset-today', (req, res) => {
+app.post('/api/reset-today', async (req, res) => {
     try {
         const { userId } = req.body || {};
 
@@ -334,6 +334,18 @@ app.post('/api/reset-today', (req, res) => {
             ok: true,
             deletedCount: result.deletedCount
         });
+
+        if (result.deletedCount > 0) {
+            await safePush(
+                userId,
+                `✅ รีเซ็ตข้อมูลวันนี้เรียบร้อยแล้ว\nลบข้อมูลจำนวน ${result.deletedCount} รายการจาก Dashboard`
+            );
+        } else {
+            await safePush(
+                userId,
+                'ℹ️ รีเซ็ตข้อมูลวันนี้เรียบร้อยแล้ว\nแต่วันนี้ยังไม่มีข้อมูลให้ลบ'
+            );
+        }
     } catch (error) {
         console.error('❌ /api/reset-today error:', error);
         res.status(500).json({
@@ -729,6 +741,19 @@ async function safeReply(replyToken, text) {
         type: 'text',
         text
     });
+}
+
+async function safePush(userId, text) {
+    if (!userId || !text) return;
+
+    try {
+        await client.pushMessage(userId, {
+            type: 'text',
+            text
+        });
+    } catch (error) {
+        console.error('❌ pushMessage error:', error);
+    }
 }
 
 // =====================
