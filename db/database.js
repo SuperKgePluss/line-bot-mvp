@@ -126,10 +126,55 @@ function getDailySummary(userId, limitDays = 7) {
     }));
 }
 
+// สรุปรายเดือนย้อนหลัง
+function getMonthlySummary(userId, limitMonths = 6) {
+    const stmt = db.prepare(`
+        SELECT *
+        FROM (
+            SELECT
+                strftime('%Y-%m', datetime(createdAt, '+7 hours')) as month,
+                SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) as income,
+                SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as expense
+            FROM transactions
+            WHERE userId = ?
+            GROUP BY strftime('%Y-%m', datetime(createdAt, '+7 hours'))
+            ORDER BY month DESC
+            LIMIT ?
+        )
+        ORDER BY month ASC
+    `);
+
+    const rows = stmt.all(userId, limitMonths);
+
+    return rows.map(row => ({
+        month: row.month,
+        income: row.income || 0,
+        expense: row.expense || 0,
+        balance: (row.income || 0) - (row.expense || 0)
+    }));
+}
+
+// ลบเฉพาะข้อมูลของ user ปัจจุบันใน "วันนี้"
+function deleteTodayTransactionsByUser(userId) {
+    const stmt = db.prepare(`
+        DELETE FROM transactions
+        WHERE userId = ?
+          AND DATE(datetime(createdAt, '+7 hours')) = DATE('now', '+7 hours')
+    `);
+
+    const result = stmt.run(userId);
+
+    return {
+        deletedCount: result.changes || 0
+    };
+}
+
 module.exports = {
     db,
     getRecentTransactions,
     getTodaySummary,
     getTodayCategorySummary,
-    getDailySummary
+    getDailySummary,
+    getMonthlySummary,
+    deleteTodayTransactionsByUser
 };

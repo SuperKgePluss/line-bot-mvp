@@ -198,6 +198,8 @@
                             <option value="30">ย้อนหลัง 30 วัน</option>
                         </select>
                         <button type="button" id="reloadBtn">รีโหลดข้อมูล</button>
+                        <button type="button" id="resetTodayBtn">รีเซ็ตข้อมูลวันนี้</button>
+                        <span id="actionMessage" class="muted"></span>
                     </div>
 
                     <div class="cards">
@@ -231,6 +233,11 @@
                         </div>
                     </div>
 
+                    <div class="section" style="margin-bottom: 20px;">
+                        <h2>รายรับ vs รายจ่ายรายเดือน</h2>
+                        <canvas id="monthlyChart" height="110"></canvas>
+                    </div>
+                    
                     <div class="section">
                         <h2>รายการล่าสุด</h2>
                         <div class="table-wrap">
@@ -256,9 +263,10 @@
 
                 <script>
                     const LIFF_ID = ${JSON.stringify(liffId)};
-                    let currentUserId = null;
-                    let dailyChart = null;
-                    let categoryChart = null;
+                        let currentUserId = null;
+                        let dailyChart = null;
+                        let categoryChart = null;
+                        let monthlyChart = null;
 
                     function formatCurrency(value) {
                         return Number(value || 0).toLocaleString('en-US') + ' บาท';
@@ -268,6 +276,20 @@
                         if (type === 'income') return 'รายรับ';
                         if (type === 'expense') return 'รายจ่าย';
                         return type || '-';
+                    }
+
+                    function showActionMessage(message, isError) {
+                        const el = document.getElementById('actionMessage');
+                        if (!el) return;
+                    
+                        el.textContent = message || '';
+                        el.style.color = isError ? '#b00020' : '#2e7d32';
+                    
+                        if (message) {
+                            setTimeout(function() {
+                                el.textContent = '';
+                            }, 3000);
+                        }
                     }
 
                     function setCategoryEmptyState(message) {
@@ -399,6 +421,119 @@
                             console.error('loadCategorySummary error:', error);
                             setCategoryEmptyState('โหลดสรุปตามหมวดหมู่ไม่สำเร็จ');
                         }
+                    }
+
+                    async function loadMonthlySummary() {
+                        try {
+                            const data = await fetchJson(
+                                '/api/monthly-summary?userId=' + encodeURIComponent(currentUserId) + '&months=6'
+                            );
+                    
+                            renderMonthlyChart(data.items || []);
+                        } catch (error) {
+                            console.error('loadMonthlySummary error:', error);
+                        }
+                    }
+
+                    async function resetTodayData() {
+                        const confirmed = window.confirm('ต้องการลบข้อมูลของ "วันนี้" ทั้งหมดใช่หรือไม่?');
+                        if (!confirmed) {
+                            return;
+                        }
+                    
+                        try {
+                            const res = await fetch('/api/reset-today', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    userId: currentUserId
+                                })
+                            });
+                    
+                            if (!res.ok) {
+                                throw new Error('HTTP ' + res.status);
+                            }
+                    
+                            const data = await res.json();
+                    
+                            showActionMessage(
+                                'รีเซ็ตข้อมูลวันนี้สำเร็จ (' + Number(data.deletedCount || 0) + ' รายการ)',
+                                false
+                            );
+                    
+                            await loadRecentTransactions();
+                            await loadSummary();
+                            await loadCategorySummary();
+                            await loadMonthlySummary();
+                        } catch (error) {
+                            console.error('resetTodayData error:', error);
+                            showActionMessage('รีเซ็ตข้อมูลวันนี้ไม่สำเร็จ', true);
+                        }
+                    }
+
+                    function renderMonthlyChart(items) {
+                        const canvas = document.getElementById('monthlyChart');
+                        if (!canvas) return;
+                    
+                        const rows = items || [];
+                    
+                        const labels = rows.map(function(item) {
+                            return item.month || '-';
+                        });
+                    
+                        const incomeData = rows.map(function(item) {
+                            return Number(item.income || 0);
+                        });
+                    
+                        const expenseData = rows.map(function(item) {
+                            return Number(item.expense || 0);
+                        });
+                    
+                        if (monthlyChart) {
+                            monthlyChart.destroy();
+                        }
+                    
+                        monthlyChart = new Chart(canvas, {
+                            type: 'bar',
+                            data: {
+                                labels: labels,
+                                datasets: [
+                                    {
+                                        label: 'รายรับ',
+                                        data: incomeData
+                                    },
+                                    {
+                                        label: 'รายจ่าย',
+                                        data: expenseData
+                                    }
+                                ]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: true,
+                                plugins: {
+                                    legend: {
+                                        position: 'top'
+                                    },
+                                    tooltip: {
+                                        callbacks: {
+                                            label: function(context) {
+                                                const label = context.dataset.label || '';
+                                                const value = context.raw || 0;
+                                                return label + ': ' + formatCurrency(value);
+                                            }
+                                        }
+                                    }
+                                },
+                                scales: {
+                                    y: {
+                                        beginAtZero: true
+                                    }
+                                }
+                            }
+                        });
                     }
 
                     function renderCategoryChart(items) {
@@ -541,6 +676,7 @@
                             await loadRecentTransactions();
                             await loadSummary();
                             await loadCategorySummary();
+                            await loadMonthlySummary();
                         } catch (error) {
                             console.error('initDashboard error:', error);
                             document.getElementById('userText').textContent = 'โหลด LIFF ไม่สำเร็จ';
@@ -551,10 +687,15 @@
                         loadRecentTransactions();
                         loadSummary();
                         loadCategorySummary();
+                        loadMonthlySummary();
                     });
 
                     document.getElementById('days').addEventListener('change', function() {
                         loadSummary();
+                    });
+
+                    document.getElementById('resetTodayBtn').addEventListener('click', function() {
+                        resetTodayData();
                     });
 
                     initDashboard();

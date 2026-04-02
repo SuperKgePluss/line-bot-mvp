@@ -7,7 +7,9 @@ const {
     getTodaySummary,
     getRecentTransactions,
     getTodayCategorySummary,
-    getDailySummary
+    getDailySummary,
+    getMonthlySummary,
+    deleteTodayTransactionsByUser
 } = require('./db/database');
 const { generateAIInsight } = require('./services/ai');
 
@@ -15,49 +17,52 @@ const { generateAIInsight } = require('./services/ai');
 // SYSTEM MESSAGES
 // =====================
 const WELCOME_MESSAGE = `
-👋 สวัสดีครับ นี่คือระบบบันทึกรายรับ-รายจ่ายสำหรับเกษตรกร
+👋 ยินดีต้อนรับสู่ผู้ช่วยจัดการบัญชีของคุณ
 
-ช่วยคุณ:
-✅ บันทึกเงินเข้า-ออก ง่าย ๆ
-✅ สรุปยอดอัตโนมัติ
-✅ ดูภาพรวมผ่าน Dashboard
-
-━━━━━━━━━━━
-
-✏️ เริ่มใช้งานทันที:
-
-ลองพิมพ์:
-👉 ซื้อปุ๋ย 500
-👉 ขายผัก 3000
+ระบบนี้ช่วยคุณ:
+✅ บันทึกรายรับ-รายจ่าย
+✅ ดูสรุปยอดได้ทันที
+✅ เปิด Dashboard ดูภาพรวมได้
+✅ ขอ AI ช่วยวิเคราะห์ได้
 
 ━━━━━━━━━━━
 
-📊 ดูสรุป:
-พิมพ์ "สรุป"
+📌 วิธีใช้งาน
+1️⃣ พิมพ์รายการ เช่น
+- ซื้อปุ๋ย 500 บาท
+- ขายข้าวโพด 3000 บาท
+- จ้างคนมาทำงาน 800 บาท
 
-📱 เปิด Dashboard:
-พิมพ์ "แดชบอร์ด" หรือกดเมนูด้านล่าง
+2️⃣ พิมพ์ "สรุป" เพื่อดูภาพรวมวันนี้
+3️⃣ พิมพ์ "วิเคราะห์" เพื่อขอคำแนะนำ
+4️⃣ พิมพ์ "แดชบอร์ด" เพื่อเปิด Dashboard
 
-❓ วิธีใช้เพิ่มเติม:
-พิมพ์ "ช่วยเหลือ"
+❓ พิมพ์ "ช่วยเหลือ" เพื่อดูวิธีใช้อีกครั้ง
 `;
 
 const HELP_MESSAGE = `
-📘 วิธีใช้งาน
+📘 วิธีใช้งานแบบสั้น
 
-✏️ บันทึก:
-- ซื้อปุ๋ย 500
-- ขายไข่ 1200
+1️⃣ บันทึกรายการ เช่น
+- ซื้อปุ๋ย 500 บาท
+- ขายผัก 3000 บาท
+- จ้างคนมาทำงาน 800 บาท
 
-📌 หลายรายการ:
-ซื้อปุ๋ย 500
-ซื้ออาหารไก่ 300
+2️⃣ ถ้ามีหลายรายการ ส่งหลายบรรทัดได้ เช่น
+ซื้อปุ๋ย 500 บาท
+ซื้ออาหารไก่ 300 บาท
+ขายไข่ 1200 บาท
 
-📊 สรุป:
+3️⃣ ดูสรุป
 พิมพ์ "สรุป"
 
-📱 Dashboard:
+4️⃣ เปิด Dashboard
 พิมพ์ "แดชบอร์ด"
+
+5️⃣ ขอ AI วิเคราะห์
+พิมพ์ "วิเคราะห์"
+
+📌 แนะนำให้พิมพ์ชื่อรายการ + จำนวนเงินให้ชัดเจน
 `;
 
 const PARSE_ERROR_MESSAGE = `
@@ -111,7 +116,6 @@ function isAIInsightCommand(text) {
 const { renderDashboardPage } = require('./views/dashboard');
 
 const app = express();
-
 const config = {
     channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
     channelSecret: process.env.LINE_CHANNEL_SECRET,
@@ -199,6 +203,27 @@ const CATEGORY_RULES = [
             /จ้าง.*/,
             /(ตัด|ถอน|ขุด|ล้าง|เก็บ).*(คน|จ้าง)/,
             /ทำเอง/
+        ]
+    },
+    {
+        name: 'ค่าซ่อม / บำรุงรักษา',
+        priority: 3,
+        triggers: ['ซ่อม', 'บำรุง', 'เปลี่ยน', 'แก้', 'ล้าง'],
+        keywords: [
+            'ซ่อม', 'ซ่อมแซม', 'ค่าซ่อม',
+            'บำรุง', 'บำรุงรักษา',
+            'อะไหล่', 'เปลี่ยนอะไหล่',
+            'เครื่อง', 'เครื่องมือ', 'เครื่องสูบ', 'เครื่องตัดหญ้า',
+            'รถไถ', 'รถ', 'ปั๊ม', 'ปั๊มน้ำ',
+            'ท่อ', 'ระบบน้ำ', 'ระบบไฟ',
+            'เครื่องหยอด', 'เครื่องหยอดข้าวโพด',
+            'ล้างเครื่อง', 'ล้างปั๊ม'
+        ],
+        patterns: [
+            /(ซ่อม|ซ่อมแซม).*/,
+            /(บำรุง|บำรุงรักษา).*/,
+            /ค่า(ซ่อม|เปลี่ยนอะไหล่).*/,
+            /(เปลี่ยนอะไหล่|เปลี่ยนยาง|เปลี่ยนน้ำมันเครื่อง).*/
         ]
     },
     {
@@ -294,13 +319,65 @@ app.post('/webhook', line.middleware(config), (req, res) => {
     });
 });
 
+app.use(express.json());
+
+
+app.post('/api/reset-today', (req, res) => {
+    try {
+        const { userId } = req.body || {};
+
+        if (!requireUserId(res, userId)) return;
+
+        const result = deleteTodayTransactionsByUser(userId);
+
+        res.json({
+            ok: true,
+            deletedCount: result.deletedCount
+        });
+    } catch (error) {
+        console.error('❌ /api/reset-today error:', error);
+        res.status(500).json({
+            ok: false,
+            error: 'Internal server error'
+        });
+    }
+});
+
 // =====================
 // CLASSIFY CATEGORY
 // =====================
+function classifyCategoryOverride(text) {
+    const input = String(text || '').trim().toLowerCase();
+
+    if (!input) return null;
+
+    // 1) ค่าแรง ต้องชนะก่อน ถ้ามีคำว่าจ้าง/คน/แรงงาน
+    if (
+        /(จ้าง|ค่าจ้าง|ค่าแรง|แรงงาน|คนงาน|ลูกน้อง)/.test(input) &&
+        !/(ขาย|รับเงิน|ได้เงิน)/.test(input)
+    ) {
+        return 'ค่าแรง';
+    }
+
+    // 2) ค่าซ่อม / บำรุงรักษา
+    if (
+        /(ซ่อม|ซ่อมแซม|ค่าซ่อม|บำรุง|บำรุงรักษา|อะไหล่|เปลี่ยนอะไหล่|repair)/.test(input)
+    ) {
+        return 'ค่าซ่อม / บำรุงรักษา';
+    }
+
+    return null;
+}
+
 function classifyCategory(text) {
     const input = String(text || '').trim().toLowerCase();
 
     if (!input) return 'อื่นๆ';
+
+    const overrideCategory = classifyCategoryOverride(input);
+    if (overrideCategory) {
+        return overrideCategory;
+    }
 
     for (const rule of CATEGORY_RULES) {
         const matchedPattern = (rule.patterns || []).some((pattern) => pattern.test(input));
@@ -350,7 +427,7 @@ function detectType(text) {
         return 'income';
     }
 
-    if (/(ซื้อ|รายจ่าย|จ่าย|ค่า|ค่าส่ง|โอนออก|เสีย|หมดไป|ผ่อน|ชำระ)/.test(input)) {
+    if (/(ซื้อ|รายจ่าย|จ่าย|ค่า|ค่าส่ง|โอนออก|เสีย|หมดไป|ผ่อน|ชำระ|ซ่อม|บำรุง|เปลี่ยนอะไหล่)/.test(input)) {
         return 'expense';
     }
 
@@ -860,6 +937,30 @@ app.get('/api/daily-summary', (req, res) => {
     }
 });
 
+app.get('/api/monthly-summary', (req, res) => {
+    try {
+        const { userId } = req.query;
+        const months = Number(req.query.months || 6);
+
+        if (!requireUserId(res, userId)) return;
+
+        const safeMonths = Math.min(Math.max(months, 1), 24);
+        const rows = getMonthlySummary(userId, safeMonths);
+
+        res.json({
+            ok: true,
+            count: rows.length,
+            items: rows
+        });
+    } catch (error) {
+        console.error('❌ /api/monthly-summary error:', error);
+        res.status(500).json({
+            ok: false,
+            error: 'Internal server error'
+        });
+    }
+});
+
 // =====================
 // DEBUG API
 // =====================
@@ -927,6 +1028,29 @@ if (process.env.ENABLE_DEBUG === 'true') {
             });
         } catch (error) {
             console.error('❌ /debug/daily-summary error:', error);
+            res.status(500).json({
+                ok: false,
+                error: 'Internal server error'
+            });
+        }
+    });
+    app.get('/debug/monthly-summary', (req, res) => {
+        try {
+            const { userId } = req.query;
+            const months = Number(req.query.months || 6);
+
+            if (!requireUserId(res, userId)) return;
+
+            const safeMonths = Math.min(Math.max(months, 1), 24);
+            const rows = getMonthlySummary(userId, safeMonths);
+
+            res.json({
+                ok: true,
+                count: rows.length,
+                items: rows
+            });
+        } catch (error) {
+            console.error('❌ /debug/monthly-summary error:', error);
             res.status(500).json({
                 ok: false,
                 error: 'Internal server error'
